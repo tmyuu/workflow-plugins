@@ -108,6 +108,7 @@ CLAUDE.md 追記に加え、**taxonomy.json に沿って GitHub Label を同期*
 | `/start #N` | 作業開始: Issue 検証 → ブランチ作成 → Status In Progress |
 | `/finish #N` | 作業完了: チェック確認 → PR マージ → Issue クローズ → Status Done を一括駆動 |
 | `/update-issue` | ステータス変更・アクションアイテム更新・子 Issue クローズ連動 |
+| `/worklog [#N]` | 工数集計: 向き合っていた時間を Issue 単位で算出し、ローカル + Issue コメント + Project 工数フィールドへ同期 |
 
 ## Hooks（軸ごとの実装）
 
@@ -126,6 +127,7 @@ CLAUDE.md 追記に加え、**taxonomy.json に沿って GitHub Label を同期*
 | auto-status-transition.sh | PostToolUse(Bash) | 3 | commit → In Progress、close/merge → Done |
 | auto-update-parent-checklist.sh | PostToolUse(Bash) | 2 | 子クローズで親チェックリストを自動連動 |
 | auto-lint.sh | PostToolUse(Edit\|Write) | — | .ts/.tsx 編集後の自動 ESLint |
+| worklog-heartbeat.sh | UserPromptSubmit / Stop | 工数 | 対話ごとに epoch 時刻 + ブランチ + Issue を `.claude/worklog/heartbeats.jsonl` に無音追記 |
 
 ## Agents
 
@@ -157,6 +159,7 @@ github-project-manager/
 │   ├── new-acceptance.md
 │   ├── start.md
 │   ├── finish.md                     # 完了駆動: マージ→クローズ→Done
+│   ├── worklog.md                    # 工数集計 + GitHub 同期
 │   └── update-issue.md
 ├── skills/
 │   └── issue-lifecycle/SKILL.md       # 4 軸構造
@@ -175,8 +178,29 @@ github-project-manager/
     ├── guard-project-create.sh
     ├── auto-status-transition.sh
     ├── auto-update-parent-checklist.sh
-    └── auto-lint.sh
+    ├── auto-lint.sh
+    ├── worklog-heartbeat.sh           # 工数ハートビート（無音追記）
+    └── worklog-aggregate.sh           # 工数集計 + GitHub 同期
 ```
+
+## 工数記録（worklog）
+
+「LLM に向き合っていた時間」を Issue 単位で記録する。外部ツール不要、hook ネイティブ。
+
+```
+[計測] UserPromptSubmit / Stop hook
+        └─ epoch + ブランチ(→#N) を .claude/worklog/heartbeats.jsonl に無音追記
+[集計] /worklog [#N]  → worklog-aggregate.sh
+        ├─ 連続ハートビート間の差分を min(差分, IDLE_CAP=15分) でクランプ加算
+        │    → 離席・夜跨ぎを過大計上せず「向き合っていた時間」に近づける
+        ├─ ローカル: .claude/worklog/issue-<N>.json（一次データ・生ログから再計算可）
+        ├─ GitHub①: Issue コメント <!-- worklog --> を冪等 upsert（累計 + 日別）
+        └─ GitHub②: Project Number フィールド「工数(h)」へ同期（無ければ作成）
+```
+
+- 生ログ `heartbeats.jsonl` は `.claude/worklog/.gitignore` で git 管理外（閾値を変えて再集計可能）
+- 集計結果 `issue-<N>.json` は追跡可能なまま残す
+- `WORKLOG_IDLE_CAP`（秒）/ `WORKLOG_FIELD`（既定 "工数(h)"）/ `WORKLOG_NO_GITHUB=1` で挙動を調整
 
 ## 設計方針
 

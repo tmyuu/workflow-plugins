@@ -20,6 +20,22 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/review-prompt.sh\"",
             "timeout": 10,
             "statusMessage": "ワークフロー確認中..."
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/worklog-heartbeat.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/worklog-heartbeat.sh\"",
+            "timeout": 5
           }
         ]
       }
@@ -72,6 +88,15 @@
       }
     ],
     "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/worklog-heartbeat.sh\"",
+            "timeout": 5
+          }
+        ]
+      },
       {
         "matcher": "Edit|Write",
         "hooks": [
