@@ -93,6 +93,28 @@ gh issue list --state open --limit 15 \
   --jq '.[] | "#\(.number) [\(.labels | map(.name) | join(","))] \(.title) @\(.assignees | map(.login) | join(","))"' 2>/dev/null
 echo ""
 
+# === オープン PR（マージ待ちの可視化: auto mode で滞留させないため） ===
+echo "### オープン PR"
+PR_JSON=$(gh pr list --state open --limit 20 \
+  --json number,title,isDraft,mergeable,reviewDecision,statusCheckRollup,headRefName,body 2>/dev/null)
+if [ -n "$PR_JSON" ] && [ "$PR_JSON" != "[]" ] && [ "$PR_JSON" != "null" ]; then
+  echo "$PR_JSON" | jq -r '
+    def checkstate:
+      (.statusCheckRollup // []) as $c
+      | if   ($c | length) == 0 then "checks:none"
+        elif ($c | map(select((.conclusion // .state // "") | test("FAIL|ERROR|CANCEL|TIMED"))) | length) > 0 then "checks:✗"
+        elif ($c | map(select(((.status // "COMPLETED") != "COMPLETED") or ((.state // "") == "PENDING"))) | length) > 0 then "checks:pending"
+        else "checks:✓" end;
+    .[] |
+    ([.headRefName | scan("#[0-9]+")] | (.[0] // "?")) as $issue |
+    ((.body // "") | test("(?i)(close[sd]?|fix(es|ed)?|resolve[sd]?) +#[0-9]+")) as $hasCloses |
+    "- PR #\(.number) \(.title)\n    Issue:\($issue) | \(if .isDraft then "draft" else "ready" end) | mergeable:\(.mergeable) | review:\(.reviewDecision // "NONE") | \(checkstate)\(if $hasCloses then "" else " | ⚠Closes未記載" end)"
+  ' 2>/dev/null
+else
+  echo "（オープン PR なし）"
+fi
+echo ""
+
 # === 直近完了 + チェックリスト未完了×Closed の異常検知 ===
 echo "### 最近完了 (5件)"
 RECENT_CLOSED=$(gh issue list --state closed --limit 5 \
@@ -175,6 +197,16 @@ cat <<'AUDIT'
   - #B の parent が A、だが A の body チェックリストに #B なし → 親記述漏れ
 - **チェックリスト未完了で Closed**（= 作業が終わっていないのに閉じている）
   → reopen してチェックを埋めるか、ユーザーに「意図的に閉じたか」を確認
+- **マージ待ち PR の滞留**（上記「オープン PR」セクション参照）
+  - `checks:✓` かつ review が承認/不要で `ready` な PR → マージして Issue を閉じ、ワークフローを完了させる
+  - PR は merge 済みなのに対応 Issue が Open / Status≠Done → Issue を閉じ Status を Done に揃える
+  - Issue が In Progress なのに open PR も最近の commit も無い → 停滞。状況を確認し再開 or クローズ
+
+**auto mode（自律実行）での完了駆動 — 重要:**
+PR 作成で作業を止めないこと。プラグインの hook は「悪い操作を止める」防御であり、
+完了まで前進させるのは Claude の責務。`checks:✓` で `ready` な PR は
+`/finish #N`（または `gh pr merge` → 必要なら `gh issue close`）で
+**マージ → Issue クローズ → Status:Done まで駆動**し、ワークフローを完了させる。
 
 矛盾がなければ監査スキップ。メインの作業はブロックしないこと。
 AUDIT

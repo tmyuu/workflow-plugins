@@ -69,9 +69,10 @@ CLAUDE.md 追記に加え、**taxonomy.json に沿って GitHub Label を同期*
                                            ▼
                                        [PR 作成]
                                            │  Closes #N 必須
-                                           ▼
-                                   [PR マージ／クローズ]
+                                           ▼          [作業完了]
+                                   [PR マージ／クローズ] ◀──── /finish #N
                                            │  未完了チェックリストあればブロック
+                                           │  マージ → クローズ → Status Done を一括駆動
                                            │  Status → Done に自動遷移
                                            │  親 Issue のチェックリストを自動連動
                                            ▼
@@ -105,13 +106,14 @@ CLAUDE.md 追記に加え、**taxonomy.json に沿って GitHub Label を同期*
 | `/new-minutes` | 議事録 md → Minutes Issue（md 未作成なら `docs/meetings/` にテンプレ生成） |
 | `/new-acceptance` | 検収 Issue 作成（クライアントアサイン・前工程 Blocks by） |
 | `/start #N` | 作業開始: Issue 検証 → ブランチ作成 → Status In Progress |
+| `/finish #N` | 作業完了: チェック確認 → PR マージ → Issue クローズ → Status Done を一括駆動 |
 | `/update-issue` | ステータス変更・アクションアイテム更新・子 Issue クローズ連動 |
 
 ## Hooks（軸ごとの実装）
 
 | Hook | イベント | 担当軸 | 機能 |
 |------|---------|--------|------|
-| inject-project-state.sh | SessionStart | 横断 | プロジェクト/Issue/Git/**親子関係** 状態を注入、異常パターンを LLM に見せる |
+| inject-project-state.sh | SessionStart | 横断 | プロジェクト/Issue/**オープン PR**/Git/**親子関係** 状態を注入、異常パターン（マージ待ち PR 滞留含む）を LLM に見せ完了まで駆動させる |
 | review-prompt.sh | UserPromptSubmit | 1 | ブランチ状況に応じた行動指針、範囲外指示の警告 |
 | guard-main-branch-edit.sh | PreToolUse(Edit/Write) | 1 | main 上のソースコード編集をブロック |
 | guard-commit.sh | PreToolUse(Bash) | 1 | コミットメッセージの #N を検証 |
@@ -154,6 +156,7 @@ github-project-manager/
 │   ├── new-minutes.md
 │   ├── new-acceptance.md
 │   ├── start.md
+│   ├── finish.md                     # 完了駆動: マージ→クローズ→Done
 │   └── update-issue.md
 ├── skills/
 │   └── issue-lifecycle/SKILL.md       # 4 軸構造

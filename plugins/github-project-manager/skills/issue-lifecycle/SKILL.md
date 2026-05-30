@@ -43,6 +43,13 @@ user-invocable: false
 - Label / Project は対応 Issue と同じ
 - PR タイトルは短く（70 文字以内）
 
+### 完了させる（/finish #N 推奨）
+- **PR 作成で止めない**。`/start` で始めた作業は `/finish` で終わらせる
+- `/finish #N`: 未完了チェック確認 → PR マージ → Issue クローズ → Status:Done を一括駆動
+- **auto mode（自律実行）では特に重要**: hook は「悪い操作を止める」防御であり、
+  完了まで前進させるのは Claude の責務。`checks:✓` で `ready` な PR は放置せずマージまで進める
+- SessionStart の「オープン PR」セクションでマージ待ちを可視化 → 滞留を検出して完了させる
+
 ---
 
 ## 軸 2: 親子関係を最適に保つ
@@ -81,6 +88,12 @@ user-invocable: false
   - gh pr merge → Done（Closes #N の対象、または PR ブランチ由来の Issue）
 - 手動変更も尊重（すでに In Progress / Done なら素通り）
 - **GitHub Projects v2** のみ対応。プロジェクトに紐付いていない Issue は遷移しない
+
+> **構造的注意（hook の限界）**: 自動遷移は `gh pr merge` / `gh issue close` を **コマンドで実行した時のみ**発火する。
+> GitHub の Web UI・auto-merge・モバイルでマージ/クローズすると PostToolUse hook は発火せず、
+> **Status が In Progress のまま乖離**する。これは hook では原理的に塞げないため、
+> **SessionStart の整合性監査での照合・修復が唯一の担保**（「Closed Issue × Status≠Done」「Open Issue × Status:Done」を検出）。
+> なるべくマージ/クローズはコマンド（`/finish` 等）経由で行うこと。
 
 ### プロジェクト管理
 - プロジェクトは**既存のものに紐付ける**のが原則（直接の `gh project create` は `guard-project-create.sh` でブロック）
