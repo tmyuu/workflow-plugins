@@ -1,6 +1,6 @@
 {
   "name": "github-project-manager",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "GitHub を「型に沿って使いこなす PM」として振る舞う。4 軸（型通り/親子/ステータス/完了条件）で Issue/PR を制御。taxonomy.json で分類基準を一元管理。",
   "author": {
     "name": "tmyuu"

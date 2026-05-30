@@ -60,6 +60,15 @@ get_branch_issue() {
   get_current_branch | grep -oE '#[0-9]+' | grep -oE '[0-9]+' | head -1
 }
 
+# --- 工数（worklog） ---
+
+# 工数データの保存先（ユーザーリポジトリの .claude/worklog）
+worklog_dir() {
+  local root
+  root=$(git rev-parse --show-toplevel 2>/dev/null) || root="$PWD"
+  echo "$root/.claude/worklog"
+}
+
 # --- GitHub リポジトリ ---
 
 # 成功時 REPO / OWNER / REPO_NAME をエクスポート
@@ -161,6 +170,46 @@ set_project_status() {
       }
     }
   ' -f projectId="$project_id" -f itemId="$item_id" -f fieldId="$field_id" -f optionId="$option_id" >/dev/null 2>&1
+}
+
+# 指定プロジェクトの Number フィールド ID を取得（無ければ作成）
+# usage: ensure_project_number_field "$PROJECT_ID" "工数(h)"
+ensure_project_number_field() {
+  local project_id="$1" field_name="$2" fid
+  fid=$(gh api graphql -f query='
+    query($p: ID!) {
+      node(id: $p) {
+        ... on ProjectV2 {
+          fields(first: 50) {
+            nodes { ... on ProjectV2FieldCommon { id name dataType } }
+          }
+        }
+      }
+    }' -f p="$project_id" 2>/dev/null \
+    | jq -r --arg n "$field_name" '.data.node.fields.nodes[]? | select(.name == $n and .dataType == "NUMBER") | .id' | head -1)
+  if [ -z "$fid" ]; then
+    fid=$(gh api graphql -f query='
+      mutation($p: ID!, $n: String!) {
+        createProjectV2Field(input: { projectId: $p, dataType: NUMBER, name: $n }) {
+          projectV2Field { ... on ProjectV2Field { id } }
+        }
+      }' -f p="$project_id" -f n="$field_name" 2>/dev/null \
+      | jq -r '.data.createProjectV2Field.projectV2Field.id // ""')
+  fi
+  echo "$fid"
+}
+
+# Number フィールドの値を更新
+# usage: set_project_number "$PROJECT_ID" "$ITEM_ID" "$FIELD_ID" 3.4
+set_project_number() {
+  local project_id="$1" item_id="$2" field_id="$3" num="$4"
+  [ -z "$field_id" ] && return 1
+  gh api graphql -f query='
+    mutation($p: ID!, $i: ID!, $f: ID!, $v: Float!) {
+      updateProjectV2ItemFieldValue(input: {
+        projectId: $p, itemId: $i, fieldId: $f, value: { number: $v }
+      }) { projectV2Item { id } }
+    }' -f p="$project_id" -f i="$item_id" -f f="$field_id" -F v="$num" >/dev/null 2>&1
 }
 
 # Issue の全プロジェクトアイテムのステータスを遷移させる

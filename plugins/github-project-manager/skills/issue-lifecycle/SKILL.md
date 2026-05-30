@@ -120,6 +120,18 @@ user-invocable: false
 
 ---
 
+## 工数記録（worklog）
+
+「LLM に向き合っていた時間」を Issue 単位で自動計測する。
+
+- **計測**: `UserPromptSubmit` / `Stop` hook（`worklog-heartbeat.sh`）が対話のたびに
+  `epoch 時刻 + ブランチ(→#N)` を `.claude/worklog/heartbeats.jsonl` に無音追記
+- **集計**: `/worklog [#N]` で連続ハートビート間の差分を `min(差分, IDLE_CAP=15分)` でクランプ加算
+  - 離席・夜跨ぎは上限でカットされ過大計上しない（= 厳密な実時間ではなく「向き合っていた時間」の近似）
+  - Issue 帰属は `feature/#N` ブランチから解決
+- **保存先**: ローカル `.claude/worklog/issue-<N>.json`（生ログは gitignore、閾値変更で再集計可）
+  ＋ Issue コメント `<!-- worklog -->` の冪等 upsert ＋ Project Number フィールド「工数(h)」
+
 ## やってはいけないこと
 
 - Issue 番号なしのコミット

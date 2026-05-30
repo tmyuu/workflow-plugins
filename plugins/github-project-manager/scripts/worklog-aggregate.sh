@@ -1,0 +1,88 @@
+#!/bin/bash
+# 工数の集計と GitHub 同期。
+#   入力: .claude/worklog/heartbeats.jsonl（worklog-heartbeat.sh が追記）
+#   計測: Issue 単位に、連続ハートビート間の差分を min(差分, IDLE_CAP) でクランプして加算
+#         → 離席・夜跨ぎを過大計上せず「向き合っていた時間」に近づける
+#   出力:
+#     - ローカル: .claude/worklog/issue-<N>.json（一次データの集計結果）
+#     - GitHub①: Issue コメント <!-- worklog --> を冪等 upsert（累計 + 日別内訳）
+#     - GitHub②: Project Number フィールド「工数(h)」へ同期（無ければ作成）
+#
+# usage: worklog-aggregate.sh [ISSUE_NUMBER]   # 省略時は全 Issue
+# env:   WORKLOG_IDLE_CAP（秒, 既定 900=15分） / WORKLOG_FIELD（既定 "工数(h)"） / WORKLOG_NO_GITHUB=1 でローカルのみ
+
+source "$(dirname "$0")/lib.sh"
+
+has_jq || { echo "⚠ jq が必要です"; exit 0; }
+
+DIR=$(worklog_dir)
+LOG="$DIR/heartbeats.jsonl"
+[ -f "$LOG" ] || { echo "（ハートビート記録がありません: $LOG）"; exit 0; }
+
+IDLE_CAP=${WORKLOG_IDLE_CAP:-900}
+FIELD_NAME=${WORKLOG_FIELD:-"工数(h)"}
+FILTER_ISSUE=$(echo "${1:-}" | grep -oE '[0-9]+')
+
+# Issue 単位に稼働秒数（クランプ加算）と日別内訳を算出
+SUMMARY=$(jq -s --argjson cap "$IDLE_CAP" '
+  def clamped_sum(cap):
+    sort | . as $ts
+    | reduce range(1; length) as $i (0; . + ([($ts[$i] - $ts[$i-1]), cap] | min));
+  map(select(.issue != null and .issue != ""))
+  | group_by(.issue)
+  | map(
+      (.[0].issue) as $issue
+      | ([.[].t]) as $ts
+      | { issue: $issue,
+          seconds: ($ts | clamped_sum($cap)),
+          days: ( $ts | group_by(. / 86400 | floor)
+                  | map({ date: (.[0] | gmtime | strftime("%Y-%m-%d")),
+                          seconds: clamped_sum($cap) }) ) }
+    )
+' "$LOG" 2>/dev/null)
+
+[ -z "$SUMMARY" ] || [ "$SUMMARY" = "null" ] && { echo "（集計対象なし）"; exit 0; }
+
+USE_GITHUB=1
+[ "${WORKLOG_NO_GITHUB:-0}" = "1" ] && USE_GITHUB=0
+if [ "$USE_GITHUB" = "1" ]; then
+  has_gh && get_repo_info || USE_GITHUB=0
+fi
+
+echo "$SUMMARY" | jq -c '.[]' | while read -r row; do
+  ISSUE=$(echo "$row" | jq -r '.issue')
+  [ -n "$FILTER_ISSUE" ] && [ "$ISSUE" != "$FILTER_ISSUE" ] && continue
+  SEC=$(echo "$row" | jq -r '.seconds')
+  HOURS=$(jq -rn --argjson s "$SEC" '(($s / 3600) * 10 | round) / 10')
+
+  # --- ローカル集計結果を保存 ---
+  echo "$row" | jq --argjson h "$HOURS" '. + { hours: $h }' > "$DIR/issue-${ISSUE}.json"
+
+  # --- コメント本文（マーカー付き）---
+  DAYS=$(echo "$row" | jq -r '.days[] | "- \(.date): \(((.seconds / 3600) * 10 | round) / 10)h"')
+  BODY="<!-- worklog -->
+⏱ 累計工数: ${HOURS}h
+${DAYS}"
+
+  echo "Issue #${ISSUE}: ${HOURS}h"
+
+  [ "$USE_GITHUB" = "1" ] || continue
+
+  # --- GitHub①: コメント冪等 upsert ---
+  CID=$(gh api "repos/$OWNER/$REPO_NAME/issues/${ISSUE}/comments" \
+        --jq '.[] | select(.body | startswith("<!-- worklog -->")) | .id' 2>/dev/null | head -1)
+  if [ -n "$CID" ]; then
+    gh api -X PATCH "repos/$OWNER/$REPO_NAME/issues/comments/${CID}" -f body="$BODY" >/dev/null 2>&1
+  else
+    gh issue comment "$ISSUE" --body "$BODY" >/dev/null 2>&1
+  fi
+
+  # --- GitHub②: Project Number フィールドへ同期 ---
+  while IFS='|' read -r item_id project_id _title _status; do
+    [ -z "$item_id" ] && continue
+    FID=$(ensure_project_number_field "$project_id" "$FIELD_NAME")
+    set_project_number "$project_id" "$item_id" "$FID" "$HOURS"
+  done < <(list_issue_project_items "$ISSUE")
+done
+
+exit 0
