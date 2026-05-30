@@ -28,7 +28,7 @@ SUMMARY=$(jq -s --argjson cap "$IDLE_CAP" '
   def clamped_sum(cap):
     sort | . as $ts
     | reduce range(1; length) as $i (0; . + ([($ts[$i] - $ts[$i-1]), cap] | min));
-  map(select(.issue != null and .issue != ""))
+  map(.issue = (if (.issue == null or .issue == "") then "general" else .issue end))
   | group_by(.issue)
   | map(
       (.[0].issue) as $issue
@@ -66,6 +66,8 @@ ${DAYS}"
 
   echo "Issue #${ISSUE}: ${HOURS}h"
 
+  # general（非 Issue ブランチの作業）はローカルのみ。GitHub 同期は数値 Issue だけ
+  case "$ISSUE" in ''|*[!0-9]*) continue ;; esac
   [ "$USE_GITHUB" = "1" ] || continue
 
   # --- GitHub①: コメント冪等 upsert ---
