@@ -130,7 +130,13 @@ user-invocable: false
   - 離席・夜跨ぎは上限でカットされ過大計上しない（= 厳密な実時間ではなく「向き合っていた時間」の近似）
   - Issue 帰属は `feature/#N` ブランチから解決
 - **保存先**: ローカル `.claude/worklog/issue-<N>.json`（生ログは gitignore、閾値変更で再集計可）
-  ＋ Issue コメント `<!-- worklog -->` の冪等 upsert ＋ Project Number フィールド「工数(h)」
+  ＋ Issue コメント（**人別マーカー** `<!-- worklog actor=<login> hours=<H> -->`）＋ Project Number フィールド「工数(h)」
+- **多人数対応（人別シャード）**: actor（`gh api user`）ごとに自分のコメントだけを冪等 upsert し、
+  Project フィールドには **その Issue の全 worklog コメントの合計**を書く。
+  - 「人ごとに冪等 upsert → 合計は和として導出」なので、再実行で二重計上せず（冪等）、複数人が同じ Issue を触っても合算される
+  - 人別内訳がコメントとして残る（請求の監査ログ）
+- **チーム請求**: リポ単位の合計工数 = Project ボードで「工数(h)」列を SUM → ブレンド単価 × 時間でクライアントへ
+  - 非 Issue（main・調査）の `general` 時間はローカルのみで、GitHub 集計には含めない
 
 ## やってはいけないこと
 

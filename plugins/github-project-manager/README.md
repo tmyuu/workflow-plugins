@@ -193,13 +193,22 @@ github-project-manager/
 [集計] /worklog [#N]  → worklog-aggregate.sh
         ├─ 連続ハートビート間の差分を min(差分, IDLE_CAP=15分) でクランプ加算
         │    → 離席・夜跨ぎを過大計上せず「向き合っていた時間」に近づける
-        ├─ ローカル: .claude/worklog/issue-<N>.json（一次データ・生ログから再計算可）
-        ├─ GitHub①: Issue コメント <!-- worklog --> を冪等 upsert（累計 + 日別）
-        └─ GitHub②: Project Number フィールド「工数(h)」へ同期（無ければ作成）
+        ├─ ローカル: .claude/worklog/issue-<N>.json（一次データ・生ログから再計算可・actor 付き）
+        ├─ GitHub①: 人別コメント <!-- worklog actor=<login> hours=<H> --> を冪等 upsert
+        └─ GitHub②: Project「工数(h)」フィールドへ、全 worklog コメントの合計を同期（多人数合算）
 ```
 
+### 多人数・チーム請求（人別シャード方式）
+
+「誰が触ってもよく、リポ単位の合計工数を客に報告したい」用途に対応。
+
+- actor（`gh api user`）**ごとに自分のコメントだけを冪等 upsert**し、Project フィールドには
+  **その Issue の全 worklog コメントの合計**を書く（= 人別に冪等 upsert → 合計は和として導出）
+  - 再実行で二重計上しない（冪等）／複数人が同じ Issue を触っても合算される／競合は自己修復
+  - 人別内訳がコメントとして残る（請求の監査ログ）
+- **リポ合計** = Project ボードで「工数(h)」列を SUM → ブレンド単価 × 時間でクライアントへ
 - 生ログ `heartbeats.jsonl` は `.claude/worklog/.gitignore` で git 管理外（閾値を変えて再集計可能）
-- 集計結果 `issue-<N>.json` は追跡可能なまま残す
+- 集計結果 `issue-<N>.json`（actor 付き）は追跡可能なまま残す
 - `WORKLOG_IDLE_CAP`（秒）/ `WORKLOG_FIELD`（既定 "工数(h)"）/ `WORKLOG_NO_GITHUB=1` で挙動を調整
 
 ## 設計方針
