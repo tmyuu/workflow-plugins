@@ -28,9 +28,9 @@ $ARGUMENTS
      （離席・夜跨ぎを過大計上しない）
 
 2. スクリプトが行うこと（確認のみ。手動で再実行しない）:
-   - ローカル: `.claude/worklog/issue-<N>.json` に集計結果を保存
-   - GitHub①: Issue のマーカー付きコメント `<!-- worklog -->` を冪等 upsert（累計 + 日別内訳）
-   - GitHub②: Project の Number フィールド「工数(h)」へ同期（無ければ自動作成）
+   - ローカル: `.claude/worklog/issue-<N>.json` に集計結果を保存（actor 付き）
+   - GitHub①: **人別コメント** `<!-- worklog actor=<login> hours=<H> -->` を冪等 upsert（累計 + 日別内訳）
+   - GitHub②: Project の Number フィールド「工数(h)」へ、**その Issue の全メンバー合計**を同期（無ければ自動作成）
 
 3. スクリプトの出力（Issue ごとの累計時間）を端的に報告する。
 
